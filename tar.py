@@ -4,8 +4,8 @@ import shutil
 import tarfile
 import uuid
 from pathlib import Path
-
-from index import index
+from filelock import Timeout, FileLock, SoftFileLock
+from indexpg import index
 
 
 def add_file_to_archive(filename_to_add, tar_file_name, db_index_object):
@@ -21,17 +21,17 @@ def add_file_to_archive(filename_to_add, tar_file_name, db_index_object):
     bfsize = os.path.getsize(btarid)
 
     # ask where to copy this tar block and register it
-    start_offset = db.insert_and_retrieve_new_offset(bfsize, btarid)
+    # start_offset = db.insert_and_retrieve_new_offset(bfsize, btarid)
 
     # write block to offset
-    write_block_final_tar(tar_file_name, btarid, start_offset)
+    write_block_final_tar(tar_file_name, btarid, None)
 
     # remove temporary tar block
     os.remove(btarid)
 
     db.close()
 
-    print("filename : {3}, file size : {0}, btar size : {1}, start_offset : {2}".format(fsize, bfsize, start_offset,
+    print("filename : {3}, file size : {0}, btar size : {1}, start_offset : {2}".format(fsize, bfsize, None,
                                                                                         filename_to_add))
 
 
@@ -45,14 +45,16 @@ def create_file_tarinfo_from_stream(tfilename, size):
 def create_block_from_stream(tar_name, tarinfo, filestream):
     with tarfile.open(tar_name, "a") as f:
         f.format = tarfile.GNU_FORMAT
-
         f.addfile(tarinfo, filestream)
-
         f.closed = True
         f.fileobj.close()
 
 
 def write_block_final_tar(tar_file_name, block_file, start_offset):
+    lock = FileLock("{0}.lock".format(tar_file_name))
+
+    lock.acquire(timeout=-1)
+
     path = Path(tar_file_name)
 
     if path.is_file():
@@ -61,16 +63,13 @@ def write_block_final_tar(tar_file_name, block_file, start_offset):
         output = open(tar_file_name, "w")
         output.close()
 
-    output = open(tar_file_name, "r+b")
-
-    output.seek(start_offset)
-
+    output = open(tar_file_name, "ab")
+    # output.seek(start_offset)
     fblock = open(block_file, "rb")
-
     copyfileobj(fblock, output, None, None)
-
     fblock.close()
     output.close()
+    lock.release()
 
 
 def copyfileobj(src, dst, length=None, exception=OSError, bufsize=None):
