@@ -22,7 +22,8 @@ threads = int(sys.argv[4])
 
 # Thread method
 def tfile(name):
-    tar.add_file_to_archive(name, tar_file_name, db_file_path)
+    # tar.add_file_to_archive(name, tar_file_name)
+    tar.add_file_to_archive_stream(name, tar_file_name)
 
 
 if __name__ == '__main__':
