@@ -22,7 +22,7 @@ threads = int(sys.argv[4])
 
 # Thread method
 def tfile(name):
-    tar.add_file_to_archive(name, tar_file_name, db)
+    tar.add_file_to_archive(name, tar_file_name, db_file_path)
 
 
 if __name__ == '__main__':
@@ -30,9 +30,6 @@ if __name__ == '__main__':
 
     print("Directory to TAR : {0}, Tar output : {1}, Database Index Path : {2}, Thread : {3}".format(directory_to_tar, tar_file_name,
                                                                                                      db_file_path, threads))
-
-    # Database for Tar parralellism
-    db = index(db_file_path)
 
     for r, d, f in os.walk(directory_to_tar):
         for file in f:
@@ -43,6 +40,6 @@ if __name__ == '__main__':
     with Pool(threads) as p:
         p.map(tfile, tfiles)
 
-    db.close()
+
 
     print(f"Completed Execution in {time.perf_counter() - start} seconds")

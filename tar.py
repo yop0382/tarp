@@ -5,8 +5,13 @@ import tarfile
 import uuid
 from pathlib import Path
 
+from index import index
+
 
 def add_file_to_archive(filename_to_add, tar_file_name, db_index_object):
+    # Database for Tar parralellism
+    db = index(db_index_object)
+
     btarid = "{0}.btar".format(uuid.uuid4())
     fsize = os.path.getsize(filename_to_add)
 
@@ -16,13 +21,15 @@ def add_file_to_archive(filename_to_add, tar_file_name, db_index_object):
     bfsize = os.path.getsize(btarid)
 
     # ask where to copy this tar block and register it
-    start_offset = db_index_object.insert_and_retrieve_new_offset(bfsize, btarid)
+    start_offset = db.insert_and_retrieve_new_offset(bfsize, btarid)
 
     # write block to offset
     write_block_final_tar(tar_file_name, btarid, start_offset)
 
     # remove temporary tar block
     os.remove(btarid)
+
+    db.close()
 
     print("filename : {3}, file size : {0}, btar size : {1}, start_offset : {2}".format(fsize, bfsize, start_offset,
                                                                                         filename_to_add))
