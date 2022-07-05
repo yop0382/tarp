@@ -20,7 +20,10 @@ def add_file_to_archive_stream(file_name, tar_file_name, output_write_path):
 
 
 def write_block_final_tar_stream(file_name, file_stream, tar_file_name):
+    # Get Stream Size
+    file_stream.seek(0, 2)
     file_size = file_stream.tell()
+    file_stream.seek(0)
 
     # Tar Info
     tarinfo = tarfile.TarInfo(file_name)
@@ -42,7 +45,7 @@ def write_block_final_tar_stream(file_name, file_stream, tar_file_name):
     copyfileobj(file_stream, output, None, None)
 
     # Padding
-    blocks, remainder = divmod(tarinfo.size, 512)
+    blocks, remainder = divmod(file_size, 512)
     if remainder > 0:
         output.write((b"\0" * (512 - remainder)))
         blocks += 1
