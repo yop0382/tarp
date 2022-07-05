@@ -5,14 +5,56 @@ import shutil
 import tarfile
 import uuid
 from pathlib import Path
-from filelock import Timeout, FileLock, SoftFileLock
-from indexpg import index
+from filelock import FileLock
 
 
-def add_file_to_archive_stream(filename_to_add, tar_file_name):
-    file_size = os.path.getsize(filename_to_add)
-    write_block_final_tar_stream(filename_to_add, file_size, tar_file_name)
+# STREAM METHOD
 
+def add_stream_to_archive_stream(file_name, file_stream, tar_file_name, output_write_path):
+    write_block_final_tar_stream(file_name, file_stream, "{0}/{1}".format(output_write_path, tar_file_name))
+
+
+def add_file_to_archive_stream(file_name, tar_file_name, output_write_path):
+    file_stream = open(file_name, "rb")
+    write_block_final_tar_stream(file_name, file_stream, "{0}/{1}".format(output_write_path, tar_file_name))
+
+
+def write_block_final_tar_stream(file_name, file_stream, tar_file_name):
+    file_size = file_stream.tell()
+
+    # Tar Info
+    tarinfo = tarfile.TarInfo(file_name)
+    tarinfo.size = file_size
+
+    buf = tarinfo.tobuf(tarfile.GNU_FORMAT, tarfile.ENCODING, "surrogateescape")
+
+    # Lock
+    lock = FileLock("{0}.lock".format(tar_file_name))
+    lock.acquire(timeout=-1)
+
+    # Write to tar
+    output = open(tar_file_name, "ab")
+
+    # Write header
+    output.write(buf)
+
+    # Write data
+    copyfileobj(file_stream, output, None, None)
+
+    # Padding
+    blocks, remainder = divmod(tarinfo.size, 512)
+    if remainder > 0:
+        output.write((b"\0" * (512 - remainder)))
+        blocks += 1
+
+    # Release
+    output.close()
+    lock.release()
+
+    file_stream.close()
+
+
+# FILE METHOD
 
 def add_file_to_archive(filename_to_add, tar_file_name):
     # Database for Tar parralellism
@@ -50,44 +92,6 @@ def create_block_from_stream(tar_name, tarinfo, filestream):
         f.addfile(tarinfo, filestream)
         f.closed = True
         f.fileobj.close()
-
-
-def write_block_final_tar_stream(file_name, file_size, tar_file_name):
-    tarinfo = tarfile.TarInfo(file_name)
-    tarinfo.size = file_size
-
-    buf = tarinfo.tobuf(tarfile.GNU_FORMAT, tarfile.ENCODING, "surrogateescape")
-    # tarinfo = copy.copy(tarinfo)
-
-    lock = FileLock("{0}.lock".format(tar_file_name))
-    lock.acquire(timeout=-1)
-    # path = Path(tar_file_name)
-    #
-    # if path.is_file():
-    #     pass
-    # else:
-    #     output = open(tar_file_name, "w")
-    #     output.close()
-
-    # Write to tar
-    output = open(tar_file_name, "ab")
-
-    # Write header
-    output.write(buf)
-
-    # Write data
-    file_stream = open(file_name, "rb")
-    copyfileobj(file_stream, output, None, None)
-
-    # Padding
-    blocks, remainder = divmod(tarinfo.size, 512)
-    if remainder > 0:
-        output.write((b"\0" * (512 - remainder)))
-        blocks += 1
-
-    file_stream.close()
-    output.close()
-    lock.release()
 
 
 def write_block_final_tar(tar_file_name, block_file, start_offset):
