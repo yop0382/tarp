@@ -1,4 +1,5 @@
 import os
+from concurrent.futures import ThreadPoolExecutor
 
 import tar
 from index import index
@@ -7,6 +8,7 @@ import uuid
 import time
 import os
 import sys
+from threading import Lock
 
 # Launch Params
 # docker
@@ -22,9 +24,10 @@ threads = int(sys.argv[4])
 
 
 # Thread method
-def tfile(name):
+def tfile(name, flock):
+    print(name)
     # tar.add_file_to_archive(name, tar_file_name)
-    tar.add_file_to_archive_stream(name, tar_file_name, output_write_path)
+    tar.add_file_to_archive_stream(name, tar_file_name, output_write_path, flock)
 
 
 if __name__ == '__main__':
@@ -41,7 +44,10 @@ if __name__ == '__main__':
 
     start = time.perf_counter()
 
-    with Pool(threads) as p:
-        p.map(tfile, tfiles)
+    lock = Lock()
+
+    with ThreadPoolExecutor(threads) as p:
+        _ = [p.submit(tfile, f, lock) for f in tfiles]
+        # p.map(tfile, tfiles)
 
     print(f"Completed Execution in {time.perf_counter() - start} seconds")

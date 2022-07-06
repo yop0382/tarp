@@ -7,7 +7,7 @@ import tarfile
 import time
 import uuid
 from pathlib import Path
-from filelock import FileLock
+from threading import Lock
 
 
 # STREAM METHOD
@@ -16,12 +16,12 @@ def add_stream_to_archive_stream(file_name, file_stream, tar_file_name, output_w
     write_block_final_tar_stream(file_name, file_stream, "{0}/{1}".format(output_write_path, tar_file_name))
 
 
-def add_file_to_archive_stream(file_name, tar_file_name, output_write_path):
+def add_file_to_archive_stream(file_name, tar_file_name, output_write_path, flock):
     file_stream = open(file_name, "rb")
-    write_block_final_tar_stream(file_name, file_stream, "{0}/{1}".format(output_write_path, tar_file_name))
+    write_block_final_tar_stream(file_name, file_stream, "{0}/{1}".format(output_write_path, tar_file_name), flock)
 
 
-def write_block_final_tar_stream(file_name, file_stream, tar_file_name):
+def write_block_final_tar_stream(file_name, file_stream, tar_file_name, flock):
     # Get Stream Size
     file_stream.seek(0, 2)
     file_size = file_stream.tell()
@@ -32,55 +32,27 @@ def write_block_final_tar_stream(file_name, file_stream, tar_file_name):
     tarinfo.size = file_size
 
     buf = tarinfo.tobuf(tarfile.GNU_FORMAT, tarfile.ENCODING, "surrogateescape")
-    buf_size = len(buf)
 
-    # Write to tar
-    if not os.path.exists(tar_file_name):
-        output = open(tar_file_name, "a+b")
+    # Lock
+    with flock:
+        # Write to tar
+        output = open(tar_file_name, "ab")
+
+        # Write header
+        output.write(buf)
+
+        # Write data
+        copyfileobj(file_stream, output, None, None)
+
+        # Padding
+        blocks, remainder = divmod(file_size, 512)
+        if remainder > 0:
+            output.write((b"\0" * (512 - remainder)))
+            blocks += 1
+
+        # Release
         output.close()
-        output = open("{0}.offset".format(tar_file_name), "a+")
-        output.write("0")
-        output.close()
 
-    psize = predict_size(file_size, buf_size)
-
-    # Lock read / write offset
-    lockfile(tar_file_name, "{0}.lock".format(tar_file_name), timeout=300)
-
-    f = open("{0}.offset".format(tar_file_name), "r")
-    offset = int(f.read())
-    f.close()
-    f = open("{0}.offset".format(tar_file_name), "w")
-    print(f"{offset} : {psize} : {str(offset + psize)}")
-    f.write(str(offset + psize))
-    f.close()
-
-    tar_size = os.path.getsize(tar_file_name)
-
-    # Create new chunk
-    if tar_size < (int(offset) + psize):
-        append_1gb_block_size(tar_file_name)
-
-    releaselock("{0}.lock".format(tar_file_name))
-
-    # Write btar to tar file
-    output = open(tar_file_name, "r+b")
-    output.seek(offset)
-
-    # Write header
-    output.write(buf)
-
-    # Write data
-    copyfileobj(file_stream, output, None, None)
-
-    # Padding
-    blocks, remainder = divmod(file_size, 512)
-    if remainder > 0:
-        output.write((b"\0" * (512 - remainder)))
-        blocks += 1
-
-    # Release
-    output.close()
     file_stream.close()
 
 
@@ -91,9 +63,13 @@ def predict_size(file_size, buf_size):
     return (blocks * 512) + buf_size
 
 
-def append_1gb_block_size(tar_file_name):
+def append_chunk_block_size(tar_file_name, psize):
+    chunk_size = 104_857_600
+    if psize > chunk_size:
+        chunk_size = (psize + chunk_size)
+
     with open(tar_file_name, 'ab') as file:
-        file.write(b'\0' * ((1024 * 1024 * 1024) - 1))
+        file.write(b'\0' * chunk_size)
 
 
 def lockfile(target, link, timeout=300):
