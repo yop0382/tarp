@@ -1,8 +1,10 @@
 # function file for mt with tar file
 import copy
+import errno
 import os
 import shutil
 import tarfile
+import time
 import uuid
 from pathlib import Path
 from filelock import FileLock
@@ -30,13 +32,40 @@ def write_block_final_tar_stream(file_name, file_stream, tar_file_name):
     tarinfo.size = file_size
 
     buf = tarinfo.tobuf(tarfile.GNU_FORMAT, tarfile.ENCODING, "surrogateescape")
-
-    # Lock
-    lock = FileLock("{0}.lock".format(tar_file_name))
-    lock.acquire(timeout=-1)
+    buf_size = len(buf)
 
     # Write to tar
-    output = open(tar_file_name, "ab")
+    if not os.path.exists(tar_file_name):
+        output = open(tar_file_name, "a+b")
+        output.close()
+        output = open("{0}.offset".format(tar_file_name), "a+")
+        output.write("0")
+        output.close()
+
+    psize = predict_size(file_size, buf_size)
+
+    # Lock read / write offset
+    lockfile(tar_file_name, "{0}.lock".format(tar_file_name), timeout=300)
+
+    f = open("{0}.offset".format(tar_file_name), "r")
+    offset = int(f.read())
+    f.close()
+    f = open("{0}.offset".format(tar_file_name), "w")
+    print(f"{offset} : {psize} : {str(offset + psize)}")
+    f.write(str(offset + psize))
+    f.close()
+
+    tar_size = os.path.getsize(tar_file_name)
+
+    # Create new chunk
+    if tar_size < (int(offset) + psize):
+        append_1gb_block_size(tar_file_name)
+
+    releaselock("{0}.lock".format(tar_file_name))
+
+    # Write btar to tar file
+    output = open(tar_file_name, "r+b")
+    output.seek(offset)
 
     # Write header
     output.write(buf)
@@ -52,9 +81,49 @@ def write_block_final_tar_stream(file_name, file_stream, tar_file_name):
 
     # Release
     output.close()
-    lock.release()
-
     file_stream.close()
+
+
+def predict_size(file_size, buf_size):
+    blocks, remainder = divmod(file_size, 512)
+    if remainder > 0:
+        blocks += 1
+    return (blocks * 512) + buf_size
+
+
+def append_1gb_block_size(tar_file_name):
+    with open(tar_file_name, 'ab') as file:
+        file.write(b'\0' * ((1024 * 1024 * 1024) - 1))
+
+
+def lockfile(target, link, timeout=300):
+    global lock_owner
+    poll_time = 0.05
+    while timeout > 0:
+        try:
+            os.link(target, link)
+            print("Lock acquired")
+            lock_owner = True
+            break
+        except OSError as err:
+            print(err)
+            if err.errno == errno.EEXIST:
+                print("Lock unavailable. Waiting for 10 seconds...")
+                time.sleep(poll_time)
+                timeout -= poll_time
+            else:
+                raise err
+    else:
+        print("Timed out waiting for the lock.")
+
+
+def releaselock(link):
+    try:
+        if lock_owner:
+            os.unlink(link)
+            print("File unlocked")
+    except OSError:
+        print("Error:didn't possess lock.")
 
 
 # FILE METHOD
