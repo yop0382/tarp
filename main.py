@@ -9,6 +9,8 @@ import time
 import os
 import sys
 from threading import Lock
+from redis import Redis
+import redis_lock
 
 # Launch Params
 # docker
@@ -44,7 +46,11 @@ if __name__ == '__main__':
 
     start = time.perf_counter()
 
-    lock = Lock()
+    # Python Thread Lock
+    # lock = Lock()
+
+    # Redis Thread Lock
+    lock = redis_lock.StrictRedis(host="localhost", port=6379, db=0)
 
     with ThreadPoolExecutor(threads) as p:
         _ = [p.submit(tfile, f, lock) for f in tfiles]

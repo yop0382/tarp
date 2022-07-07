@@ -8,6 +8,7 @@ import time
 import uuid
 from pathlib import Path
 from threading import Lock
+import redis_lock
 
 
 # STREAM METHOD
@@ -22,6 +23,7 @@ def add_file_to_archive_stream(file_name, tar_file_name, output_write_path, floc
 
 
 def write_block_final_tar_stream(file_name, file_stream, tar_file_name, flock):
+
     # Get Stream Size
     file_stream.seek(0, 2)
     file_size = file_stream.tell()
@@ -33,8 +35,9 @@ def write_block_final_tar_stream(file_name, file_stream, tar_file_name, flock):
 
     buf = tarinfo.tobuf(tarfile.GNU_FORMAT, tarfile.ENCODING, "surrogateescape")
 
-    # Lock
-    with flock:
+    # Lock Python Threading
+    # with flock:
+    with redis_lock.Lock(flock, os.path.basename(tar_file_name)):
         # Write to tar
         output = open(tar_file_name, "ab")
 
