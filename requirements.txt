@@ -1,0 +1,2 @@
+python-redis-lock~=3.7.0
+psycopg~=3.0.15
